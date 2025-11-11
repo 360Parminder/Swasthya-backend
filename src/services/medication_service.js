@@ -4,25 +4,46 @@ const reminderModel = require("../models/reminder_model");
 const { scheduleReminder } = require("../../public/utils/scheduler");
 const User = require("../models/user_model");
 
-
-
 exports.create_medication = async (req) => {
   const user_id = req.user._id;
   const {
-    medicine_name, forms, strength, unit, frequency,
-    times, start_date, description, forWhom, relative_id
+    medicine_name,
+    forms,
+    strength,
+    unit,
+    frequency,
+    times,
+    start_date,
+    description,
+    forWhom,
+    relative_id,
   } = req.body;
   console.log("User ID in create_medication:", forWhom, relative_id);
-  
 
   if (!user_id) {
     return { status: 404, success: false, message: "User not found" };
   }
-  if (!medicine_name || !forms || !strength || !unit || !frequency || !times || !start_date) {
-    return { status: 400, success: false, message: "Missing required medication fields" };
+  if (
+    !medicine_name ||
+    !forms ||
+    !strength ||
+    !unit ||
+    !frequency ||
+    !times ||
+    !start_date
+  ) {
+    return {
+      status: 400,
+      success: false,
+      message: "Missing required medication fields",
+    };
   }
-  if (!['myself', 'connection'].includes(forWhom)) {
-    return { status: 400, success: false, message: "forWhom must be either 'myself' or 'connection'" };
+  if (!["myself", "connection"].includes(forWhom)) {
+    return {
+      status: 400,
+      success: false,
+      message: "forWhom must be either 'myself' or 'connection'",
+    };
   }
 
   const session = await mongoose.startSession();
@@ -40,19 +61,57 @@ exports.create_medication = async (req) => {
       if (!relative_id) {
         await session.abortTransaction();
         session.endSession();
-        return { status: 400, success: false, message: "Relative ID is required for relative medication" };
+        return {
+          status: 400,
+          success: false,
+          message: "Relative ID is required for relative medication",
+        };
       }
-      const relativeUser = await User.findOne({ userId: relative_id }).session(session);
+      const relativeUser = await User.findOne({ userId: relative_id }).session(
+        session
+      );
       if (!relativeUser) {
         await session.abortTransaction();
         session.endSession();
-        return { status: 404, success: false, message: "Relative user not found" };
+        return {
+          status: 404,
+          success: false,
+          message: "Relative user not found",
+        };
       }
       targetUserId = relativeUser._id;
       medRelativeId = user_id; // who is adding for the relative
     }
 
-    // ADD "created_by"
+    // Function to get image based on form type
+    const getMedicationImage = (formType) => {
+      const imageMap = {
+        capsule: "https://example.com/images/medications/capsule.png",
+        tablet: "https://example.com/images/medications/tablet.png",
+        liquid: "https://example.com/images/medications/liquid.png",
+        topical: "https://example.com/images/medications/topical.png",
+        cream: "https://example.com/images/medications/cream.png",
+        device: "https://example.com/images/medications/device.png",
+        drops: "https://example.com/images/medications/drops.png",
+        foam: "https://example.com/images/medications/foam.png",
+        gel: "https://example.com/images/medications/gel.png",
+        inhaler: "https://example.com/images/medications/inhaler.png",
+        injection: "https://example.com/images/medications/injection.png",
+        lotion: "https://example.com/images/medications/lotion.png",
+        ointment: "https://example.com/images/medications/ointment.png",
+        patch: "https://example.com/images/medications/patch.png",
+        powder: "https://example.com/images/medications/powder.png",
+        spray: "https://example.com/images/medications/spray.png",
+        suppository: "https://example.com/images/medications/suppository.png",
+      };
+
+      return (
+        imageMap[formType] ||
+        "https://example.com/images/medications/default.png"
+      );
+    };
+
+    // ADD "created_by" and medication image
     const medicationData = {
       medicine_name,
       forms,
@@ -62,20 +121,30 @@ exports.create_medication = async (req) => {
       times,
       start_date,
       description,
+      medication_image: getMedicationImage(forms), // Add image based on form type
     };
 
     // Add medication (append, don't overwrite)
     let result = await medication_model.findOneAndUpdate(
       { user_id: targetUserId },
-      { $push: { record: medicationData },created_by: user_id ,relative_id: medRelativeId,forWhom: medForWhom },
+      {
+        $push: { record: medicationData },
+        created_by: user_id,
+        relative_id: medRelativeId,
+        forWhom: medForWhom,
+      },
       { upsert: true, new: true, session }
-
     );
+
     console.log("Medication Result:", result);
     if (!result) {
       await session.abortTransaction();
       session.endSession();
-      return { status: 500, success: false, message: "Failed to create or update medication record" };
+      return {
+        status: 500,
+        success: false,
+        message: "Failed to create or update medication record",
+      };
     }
 
     await scheduleMedicationReminders([medicationData], targetUserId);
@@ -86,11 +155,11 @@ exports.create_medication = async (req) => {
       status: 200,
       success: true,
       message: "Medication added successfully",
-      data: result
+      data: result,
     };
   } catch (error) {
     console.log("Error in create_medication:", error);
-    
+
     await session.abortTransaction();
     session.endSession();
     return {
@@ -102,8 +171,6 @@ exports.create_medication = async (req) => {
   }
 };
 
-
-
 const scheduleMedicationReminders = async (medicationRecords, user_id) => {
   try {
     for (let medication of medicationRecords) {
@@ -111,7 +178,7 @@ const scheduleMedicationReminders = async (medicationRecords, user_id) => {
       if (!medication.forWhom) {
         medication.forWhom = "self"; // Default to "self" if not specified
       }
-      
+
       for (let timeEntry of medication.times) {
         //  let time =  convertUTCToIST(timeEntry.time);
         let time = timeEntry.time;
@@ -158,45 +225,43 @@ const scheduleMedicationReminders = async (medicationRecords, user_id) => {
   }
 };
 
-
 exports.view_medication = async (req, res) => {
   try {
     const user_id = req.user._id;
     console.log("User ID in view_medication:", user_id);
-    
+
     const medication_id = new mongoose.Types.ObjectId(req.query.medication_id);
     let allMedication = await medication_model.findOne({ user_id: user_id });
 
-    let queryMedication={}
-    allMedication.record.forEach((medication)=>{
-      if(medication._id.equals(medication_id)){
-        queryMedication=medication
+    let queryMedication = {};
+    allMedication.record.forEach((medication) => {
+      if (medication._id.equals(medication_id)) {
+        queryMedication = medication;
       }
-    })
-    if(!queryMedication){
-      return{
+    });
+    if (!queryMedication) {
+      return {
         status: 404,
-        success:false,
-        message:"Medication not found"
-      }
+        success: false,
+        message: "Medication not found",
+      };
     }
-    return{
+    return {
       status: 200,
-      success:true,
-      message:"Fetched Medication successfully",
-      medication:queryMedication
-    }
-
+      success: true,
+      message: "Fetched Medication successfully",
+      medication: queryMedication,
+    };
   } catch (error) {
     console.log(error);
-    
+
     return {
       status: 500,
       success: false,
       message: error.message,
     };
   }
-}
+};
 
 exports.view_all_medication = async (req, res) => {
   try {
@@ -207,7 +272,7 @@ exports.view_all_medication = async (req, res) => {
     }
     return {
       success: true,
-      medications:allMedication,
+      medications: allMedication,
       message: "All Medications fetched succesfully",
     };
   } catch (error) {
@@ -217,7 +282,6 @@ exports.view_all_medication = async (req, res) => {
     };
   }
 };
-
 
 exports.delete_medication = async (req, res) => {
   try {
@@ -232,10 +296,12 @@ exports.delete_medication = async (req, res) => {
       };
     }
 
-    const medicationIndex = allMedication.record.findIndex((medication) => medication._id.equals(medication_id));
+    const medicationIndex = allMedication.record.findIndex((medication) =>
+      medication._id.equals(medication_id)
+    );
 
     if (medicationIndex === -1) {
-      return{
+      return {
         success: false,
         message: "Medication not found",
       };
@@ -244,12 +310,12 @@ exports.delete_medication = async (req, res) => {
     allMedication.record.splice(medicationIndex, 1);
     await allMedication.save();
 
-    return{
+    return {
       success: true,
       message: "Deleted Medication successfully",
     };
   } catch (error) {
-    return{
+    return {
       success: false,
       message: error.message,
     };
