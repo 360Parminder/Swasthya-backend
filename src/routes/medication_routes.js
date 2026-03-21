@@ -9,7 +9,8 @@ const {
     update_medication,
     view_medication,
     view_all_medication,
-    
+    view_medication_by_date,
+
 } = require("../controllers/medication_controller.js");
 
 router.use(user_auth);
@@ -19,6 +20,7 @@ router.delete("/", delete_medication); // Delete a medication
 // router.put("/", update_medication); // Update a medication
 router.get("/", view_medication);
 router.get("/all", view_all_medication);
+router.get("/bydate", view_medication_by_date);
 
 // reminder_router.post("/medication/update", user_auth, update_medication);
 

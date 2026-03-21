@@ -263,6 +263,38 @@ exports.view_medication = async (req, res) => {
   }
 };
 
+exports.view_medication_by_date = async (req, res) => {
+  try {
+    const date = req.query.date;
+    const user_id = req.user._id;
+    const allMedication = await medication_model.findOne({ user_id: user_id });
+    const queryMedication = allMedication.record.filter((medication) => {
+      return medication.start_date <= date && medication.end_date >= date;
+    });
+    if (!queryMedication) {
+      return {
+        status: 404,
+        success: false,
+        message: "Medication not found",
+      };
+    }
+    return {
+      status: 200,
+      success: true,
+      message: "Fetched Medication successfully",
+      medication: queryMedication,
+    };
+  } catch (error) {
+    console.log(error);
+
+    return {
+      status: 500,
+      success: false,
+      message: error.message,
+    };
+  }
+};
+
 exports.view_all_medication = async (req, res) => {
   try {
     const user_id = req.user._id;
