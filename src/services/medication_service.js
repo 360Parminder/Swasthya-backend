@@ -14,9 +14,11 @@ exports.create_medication = async (req) => {
     frequency,
     times,
     start_date,
+    end_date,
     description,
     forWhom,
     relative_id,
+    stock,
   } = req.body;
   console.log("User ID in create_medication:", forWhom, relative_id);
 
@@ -120,8 +122,10 @@ exports.create_medication = async (req) => {
       frequency,
       times,
       start_date,
+      end_date,
       description,
       medication_image: getMedicationImage(forms), // Add image based on form type
+      stock,
     };
 
     // Add medication (append, don't overwrite)
@@ -266,11 +270,16 @@ exports.view_medication = async (req, res) => {
 exports.view_medication_by_date = async (req, res) => {
   try {
     const date = req.query.date;
+    console.log("Date: ", date);
     const user_id = req.user._id;
     const allMedication = await medication_model.findOne({ user_id: user_id });
+    console.log("All Medication: ", allMedication.record);
+
     const queryMedication = allMedication.record.filter((medication) => {
       return medication.start_date <= date && medication.end_date >= date;
     });
+    console.log("Query Medication: ", queryMedication);
+
     if (!queryMedication) {
       return {
         status: 404,
@@ -278,6 +287,12 @@ exports.view_medication_by_date = async (req, res) => {
         message: "Medication not found",
       };
     }
+    queryMedication.forEach((medication) => {
+      medication.logs = medication.logs.filter((log) => {
+        return log.time.toISOString().split("T")[0] === date;
+      });
+    });
+    console.log("Query Medication: ", queryMedication);
     return {
       status: 200,
       success: true,
