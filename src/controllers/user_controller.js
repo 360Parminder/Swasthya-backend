@@ -14,6 +14,8 @@ const {
 const { profile_picture } = require("../services/profile_picture_service.js")
 
 exports.user_login = async (req, res) => {
+  console.log("login api hit by IP :", req.headers);
+
   try {
     const data = await user_login(req, res);
     if (data.success) {
@@ -52,7 +54,7 @@ exports.user_logout = async (req, res) => {
   }
 };
 
-exports.sendOtp = async (req, res) => {  
+exports.sendOtp = async (req, res) => {
   try {
     const data = await sendOtp(req, res);
     if (data.success) {
@@ -60,7 +62,7 @@ exports.sendOtp = async (req, res) => {
     } else {
       res.status(data.status).json(data);
     }
-  } catch (error) {    
+  } catch (error) {
     res.status(500).json({ message: "An unexpected error occurred" });
   }
 };
