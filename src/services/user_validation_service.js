@@ -4,9 +4,10 @@ const jwt = require("jsonwebtoken");
 const TeleSignSDK = require("telesignsdk");
 
 const { getdata } = require("../Utils/redis");
-const {sendOtp, verifyOtp} = require("../Utils/sendOtp");
+const { sendOtp, verifyOtp } = require("../Utils/sendOtp");
 const { getOtp } = require("../Utils/mapstore");
 const { generateUserId } = require("../Utils/generate");
+const { name } = require("ejs");
 
 exports.user_login = async (req, res) => {
   try {
@@ -80,7 +81,7 @@ exports.user_login = async (req, res) => {
 
 exports.user_register = async (req, res) => {
   const {
-    username,
+    name,
     mobile,
     email,
     password,
@@ -89,11 +90,14 @@ exports.user_register = async (req, res) => {
     dob,
     gender,
     food_preference,
+    weightUnit,
+    heightUnit,
+    countryCode
   } = req.body;
   console.log(req.body);
 
   try {
-    if (!username || !mobile || !password || !weight || !height || !dob) {
+    if (!name || !mobile || !password || !weight || !height || !dob) {
       return {
         status: 400,
         message: "Missing required fields",
@@ -148,15 +152,19 @@ exports.user_register = async (req, res) => {
 
     const newUser = await user_model.create({
       userId: generateUserId(),
-      username,
+      name: name?.toLowerCase(),
+      username: email?.split('@')[0]?.toLowerCase(),
+      countryCode: countryCode?.toUpperCase() || "IN",
       mobile,
-      email: email || 'user@example.com',
+      email: email?.toLowerCase(),
       password: hashedPassword,
       weight,
       height,
       dob,
-      gender,
-      food_preference,
+      gender: gender?.toLowerCase(),
+      food_preference: food_preference?.toLowerCase(),
+      weightUnit: weightUnit?.toLowerCase(),
+      heightUnit: heightUnit?.toLowerCase(),
     });
     if (newUser) {
       return {
@@ -210,7 +218,7 @@ exports.user_logout = async (req, res) => {
   }
 };
 exports.sendOtp = async (req, res) => {
-  const {countryCode,mobile} = req.body;
+  const { countryCode, mobile } = req.body;
   try {
     const existingUser = await user_model.findOne({ mobile });
     if (existingUser) {
@@ -284,8 +292,8 @@ exports.verifyOtp = async (req, res) => {
         message: "User already exists",
       };
     }
-    const result =  await verifyOtp(mobile, otp);
-    
+    const result = await verifyOtp(mobile, otp);
+
     if (!result.success) {
       return {
         status: 500,
@@ -324,8 +332,9 @@ exports.user_profile = async (req, res) => {
     return {
       status: 200,
       success: true,
-      user:{
+      user: {
         userId: user.userId,
+        name: user.name,
         username: user.username,
         mobile: user.mobile,
         email: user.email,
@@ -440,7 +449,7 @@ exports.profile_update = async (req, res) => {
 exports.update_Password = async (req, res) => {
   const user = req.user;
   const { oldPassword, newPassword } = req.body;
-console.log(user);
+  console.log(user);
 
   try {
     const existingUser = await user_model.findById(user._id);
@@ -457,7 +466,7 @@ console.log(user);
       existingUser.password
     );
     console.log(isPasswordValid);
-    
+
     if (!isPasswordValid) {
       return {
         status: 400,
@@ -488,7 +497,7 @@ console.log(user);
 
   } catch (error) {
     console.log("Error:", error);
-    
+
     return {
       status: 500,
       success: false,
