@@ -123,7 +123,7 @@ exports.create_medication = async (req) => {
       times,
       start_date,
       end_date,
-      description,
+      description: description || "",
       medication_image: getMedicationImage(forms), // Add image based on form type
       stock,
     };
@@ -402,6 +402,13 @@ exports.update_medication_status = async (req) => {
       }
     }
 
+    // Ensure all existing records have a valid description string
+    userMedication.record.forEach((rec) => {
+      if (rec.description === undefined || rec.description === null) {
+        rec.description = "";
+      }
+    });
+
     await userMedication.save();
 
     return {
@@ -446,6 +453,14 @@ exports.update_medication = async (req) => {
     }
 
     Object.assign(userMedication.record[medIndex], updates);
+
+    // Ensure all existing records have a valid description string
+    userMedication.record.forEach((rec) => {
+      if (rec.description === undefined || rec.description === null) {
+        rec.description = "";
+      }
+    });
+
     await userMedication.save();
 
     return {
