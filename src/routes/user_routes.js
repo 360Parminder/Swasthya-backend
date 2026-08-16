@@ -17,12 +17,15 @@ const {
   profile_update,
   profile_picture,
   verifyOtp,
-  update_Password
+  update_Password,
+  google_auth,
 } = require("../controllers/user_controller.js");
 
 router.post("/login", user_login);
 
 router.post("/register", user_register);
+
+router.post("/google-auth", google_auth);
 
 router.get("/logout", user_auth, user_logout);
 

@@ -8,7 +8,7 @@ const {
   profile_update,
   verifyOtp,
   update_Password,
-
+  google_auth,
 } = require("../services/user_validation_service.js");
 
 const { profile_picture } = require("../services/profile_picture_service.js")
@@ -144,4 +144,15 @@ exports.profile_picture = async (req, res) => {
     console.log("Error:", error);
   }
 };
+
+exports.google_auth = async (req, res) => {
+  try {
+    const data = await google_auth(req, res);
+    res.status(data.status || 200).json(data);
+  } catch (error) {
+    console.error("Controller Google Auth Error:", error);
+    res.status(500).json({ success: false, message: "An unexpected error occurred during Google authentication" });
+  }
+};
+
 

@@ -508,4 +508,120 @@ exports.update_Password = async (req, res) => {
     };
 
   }
-}
+};
+
+exports.google_auth = async (req, res) => {
+  try {
+    const {
+      email,
+      name,
+      avatar,
+      googleId,
+      fcm_token,
+      mobile,
+      weight,
+      height,
+      dob,
+      gender,
+      food_preference,
+      countryCode = "IN",
+      weightUnit = "kg",
+      heightUnit = "cm",
+    } = req.body;
+
+    if (!email) {
+      return {
+        status: 400,
+        success: false,
+        message: "Google email is required",
+      };
+    }
+
+    // 1. Check if user already exists with this email
+    let user = await user_model.findOne({ email: email.toLowerCase().trim() });
+
+    if (user) {
+      // Existing user - log in
+      const token = jwt.sign({ id: user._id }, process.env.SECRET_KEY);
+      if (!token) {
+        return {
+          status: 500,
+          success: false,
+          message: "Token generation failed",
+        };
+      }
+
+      res.cookie("token", token);
+      const updatedUser = await user_model.findByIdAndUpdate(
+        user._id,
+        {
+          auth_key: token,
+          ...(fcm_token ? { notificationToken: fcm_token } : {}),
+          ...(avatar && !user.avatar ? { avatar } : {}),
+        },
+        { new: true }
+      ).select("-password");
+
+      return {
+        status: 200,
+        success: true,
+        message: "User logged in with Google successfully",
+        token,
+        user: updatedUser,
+        isNewUser: false,
+      };
+    }
+
+    // 2. New user - register via Google
+    const userId = await generateUserId(countryCode);
+    const randomPassword = Math.random().toString(36).slice(-10) + Date.now().toString(36);
+    const hashedPassword = await bcrypt.hash(randomPassword, 10);
+
+    const newUser = new user_model({
+      userId,
+      username: email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "") + Math.floor(Math.random() * 1000),
+      name: name || "Google User",
+      email: email.toLowerCase().trim(),
+      mobile: mobile || `+9100000${Math.floor(10000 + Math.random() * 90000)}`,
+      password: hashedPassword,
+      avatar: avatar || "https://res.cloudinary.com/dvo4tvvgb/image/upload/v1737770516/Profile/image.jpg",
+      weight: Number(weight) || 68,
+      height: Number(height) || 172,
+      dob: dob ? new Date(dob) : new Date("1998-01-01"),
+      gender: gender || "male",
+      food_preference: food_preference || "other",
+      weightUnit: weightUnit || "kg",
+      heightUnit: heightUnit || "cm",
+      countryCode: countryCode || "IN",
+      notificationToken: fcm_token || null,
+    });
+
+    const savedUser = await newUser.save();
+
+    const token = jwt.sign({ id: savedUser._id }, process.env.SECRET_KEY);
+    res.cookie("token", token);
+
+    savedUser.auth_key = token;
+    await savedUser.save();
+
+    const userResponse = savedUser.toObject();
+    delete userResponse.password;
+
+    return {
+      status: 201,
+      success: true,
+      message: "User registered with Google successfully",
+      token,
+      user: userResponse,
+      isNewUser: true,
+    };
+  } catch (error) {
+    console.error("Google Auth Error:", error);
+    return {
+      status: 500,
+      success: false,
+      message: error.message || "Internal server error during Google authentication",
+    };
+  }
+};
+
