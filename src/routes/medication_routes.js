@@ -7,17 +7,18 @@ const {
     create_medication,
     delete_medication,
     update_medication,
+    update_medication_status,
     view_medication,
     view_all_medication,
     view_medication_by_date,
-
 } = require("../controllers/medication_controller.js");
 
 router.use(user_auth);
 
 router.post("/", create_medication); // Create a new medication
 router.delete("/", delete_medication); // Delete a medication
-// router.put("/", update_medication); // Update a medication
+router.put("/", update_medication); // Update a medication
+router.post("/status", update_medication_status); // Update medication intake status (taken, skipped, not taken yet)
 router.get("/", view_medication);
 router.get("/all", view_all_medication);
 router.get("/bydate", view_medication_by_date);

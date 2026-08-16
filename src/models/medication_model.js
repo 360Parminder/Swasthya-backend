@@ -42,6 +42,10 @@ const logSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  dose_id: {
+    type: String,
+    required: false,
+  },
 }, { _id: false });
 
 /**

@@ -2,6 +2,7 @@ const {
   create_medication,
   delete_medication,
   update_medication,
+  update_medication_status,
   view_medication,
   view_all_medication,
   view_medication_by_date,
@@ -21,6 +22,35 @@ exports.create_medication = async (req, res) => {
     res.status(500).json(error);
   }
 };
+
+exports.update_medication = async (req, res) => {
+  try {
+    const data = await update_medication(req, res);
+    if (data.success) {
+      res.status(200).json(data);
+    } else {
+      res.status(data.status || 500).json(data);
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.update_medication_status = async (req, res) => {
+  try {
+    const data = await update_medication_status(req, res);
+    if (data.success) {
+      res.status(200).json(data);
+    } else {
+      res.status(data.status || 500).json(data);
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.view_medication = async (req, res) => {
   try {
     const data = await view_medication(req, res);
@@ -45,7 +75,7 @@ exports.view_all_medication = async (req, res) => {
       res.status(500).json(data);
     }
   } catch (error) {
-    console.log(error)
+    console.log(error);
     res.status(500).json(error);
   }
 };
@@ -58,11 +88,10 @@ exports.view_medication_by_date = async (req, res) => {
       res.status(500).json(data);
     }
   } catch (error) {
-    console.log(error)
+    console.log(error);
     res.status(500).json(error);
   }
 };
-
 
 exports.delete_medication = async (req, res) => {
   try {
@@ -73,7 +102,7 @@ exports.delete_medication = async (req, res) => {
       res.status(500).json(data);
     }
   } catch (error) {
-    console.log(error)
+    console.log(error);
     res.status(500).json(error);
   }
 };

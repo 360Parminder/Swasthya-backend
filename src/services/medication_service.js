@@ -273,35 +273,189 @@ exports.view_medication_by_date = async (req, res) => {
     console.log("Date: ", date);
     const user_id = req.user._id;
     const allMedication = await medication_model.findOne({ user_id: user_id });
-    console.log("All Medication: ", allMedication.record);
 
-    const queryMedication = allMedication.record.filter((medication) => {
-      return medication.start_date <= date && medication.end_date >= date;
-    });
-    console.log("Query Medication: ", queryMedication);
-
-    if (!queryMedication) {
+    if (!allMedication || !allMedication.record) {
       return {
-        status: 404,
-        success: false,
-        message: "Medication not found",
+        status: 200,
+        success: true,
+        message: "No medication found",
+        medication: [],
       };
     }
-    queryMedication.forEach((medication) => {
-      medication.logs = medication.logs.filter((log) => {
-        return log.time.toISOString().split("T")[0] === date;
-      });
+
+    const targetDateStr = typeof date === "string" ? date.split("T")[0] : new Date(date).toISOString().split("T")[0];
+
+    const queryMedication = allMedication.record.filter((medication) => {
+      const startStr = medication.start_date ? new Date(medication.start_date).toISOString().split("T")[0] : null;
+      const endStr = medication.end_date ? new Date(medication.end_date).toISOString().split("T")[0] : null;
+      if (startStr && startStr > targetDateStr) return false;
+      if (endStr && endStr < targetDateStr) return false;
+      return true;
     });
-    console.log("Query Medication: ", queryMedication);
+
+    const result = queryMedication.map((medication) => {
+      const medObj = medication.toObject ? medication.toObject() : { ...medication };
+      if (medObj.logs) {
+        medObj.logs = medObj.logs.filter((log) => {
+          if (!log.time) return false;
+          const logDateStr = new Date(log.time).toISOString().split("T")[0];
+          return logDateStr === targetDateStr;
+        });
+      }
+      return medObj;
+    });
+
     return {
       status: 200,
       success: true,
       message: "Fetched Medication successfully",
-      medication: queryMedication,
+      medication: result,
     };
   } catch (error) {
     console.log(error);
+    return {
+      status: 500,
+      success: false,
+      message: error.message,
+    };
+  }
+};
 
+exports.update_medication_status = async (req) => {
+  try {
+    const user_id = req.user._id;
+    const { medication_id, status = "taken", time, dose_id } = req.body;
+
+    if (!user_id) {
+      return { status: 404, success: false, message: "User not found" };
+    }
+
+    if (!medication_id) {
+      return { status: 400, success: false, message: "Medication ID is required" };
+    }
+
+    const validStatuses = ["taken", "skipped", "not taken yet"];
+    if (!validStatuses.includes(status)) {
+      return {
+        status: 400,
+        success: false,
+        message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      };
+    }
+
+    // Find the medication document for this user
+    let userMedication = await medication_model.findOne({ user_id: user_id });
+    if (!userMedication || !userMedication.record) {
+      return { status: 404, success: false, message: "Medication document not found" };
+    }
+
+    // Find the record by medication_id
+    const medRecord = userMedication.record.find(
+      (med) => med._id && med._id.toString() === medication_id.toString()
+    );
+
+    if (!medRecord) {
+      return { status: 404, success: false, message: "Medication item not found" };
+    }
+
+    const logTime = time ? new Date(time) : new Date();
+    const logDateStr = logTime.toISOString().split("T")[0];
+
+    if (!medRecord.logs) {
+      medRecord.logs = [];
+    }
+
+    // Check if there is an existing log for this date (and dose_id if given)
+    const existingLogIndex = medRecord.logs.findIndex((log) => {
+      const existingDateStr = log.time ? new Date(log.time).toISOString().split("T")[0] : null;
+      if (existingDateStr !== logDateStr) return false;
+      if (dose_id && log.dose_id) {
+        return log.dose_id.toString() === dose_id.toString();
+      }
+      return true;
+    });
+
+    const prevStatus = existingLogIndex !== -1 ? medRecord.logs[existingLogIndex].status : "not taken yet";
+
+    if (existingLogIndex !== -1) {
+      medRecord.logs[existingLogIndex].status = status;
+      medRecord.logs[existingLogIndex].logged = status === "taken";
+      medRecord.logs[existingLogIndex].time = logTime;
+      if (dose_id) {
+        medRecord.logs[existingLogIndex].dose_id = dose_id;
+      }
+    } else {
+      medRecord.logs.push({
+        time: logTime,
+        status: status,
+        logged: status === "taken",
+        dose_id: dose_id || null,
+      });
+    }
+
+    // Handle stock adjustment
+    if (medRecord.stock && typeof medRecord.stock.quantity === "number") {
+      if (status === "taken" && prevStatus !== "taken") {
+        medRecord.stock.quantity = Math.max(0, medRecord.stock.quantity - 1);
+      } else if (status !== "taken" && prevStatus === "taken") {
+        medRecord.stock.quantity = medRecord.stock.quantity + 1;
+      }
+    }
+
+    await userMedication.save();
+
+    return {
+      status: 200,
+      success: true,
+      message: `Medication marked as ${status}`,
+      data: medRecord,
+    };
+  } catch (error) {
+    console.error("Error in update_medication_status:", error);
+    return {
+      status: 500,
+      success: false,
+      message: error.message,
+    };
+  }
+};
+
+exports.update_medication = async (req) => {
+  try {
+    const user_id = req.user._id;
+    const { medication_id, ...updates } = req.body;
+
+    if (!user_id) {
+      return { status: 404, success: false, message: "User not found" };
+    }
+    if (!medication_id) {
+      return { status: 400, success: false, message: "Medication ID is required" };
+    }
+
+    let userMedication = await medication_model.findOne({ user_id: user_id });
+    if (!userMedication || !userMedication.record) {
+      return { status: 404, success: false, message: "Medication not found" };
+    }
+
+    const medIndex = userMedication.record.findIndex(
+      (med) => med._id && med._id.toString() === medication_id.toString()
+    );
+
+    if (medIndex === -1) {
+      return { status: 404, success: false, message: "Medication record not found" };
+    }
+
+    Object.assign(userMedication.record[medIndex], updates);
+    await userMedication.save();
+
+    return {
+      status: 200,
+      success: true,
+      message: "Medication updated successfully",
+      data: userMedication.record[medIndex],
+    };
+  } catch (error) {
+    console.error("Error in update_medication:", error);
     return {
       status: 500,
       success: false,
