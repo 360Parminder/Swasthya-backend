@@ -19,6 +19,7 @@ const {
   verifyOtp,
   update_Password,
   google_auth,
+  update_fcm_token,
 } = require("../controllers/user_controller.js");
 
 router.post("/login", user_login);
@@ -34,6 +35,8 @@ router.post("/sendOtp", sendOtp);
 router.post("/verifyOtp", verifyOtp);
 
 router.use(user_auth);
+
+router.post("/fcm-token", update_fcm_token);
 
 router.post("/updatePassword", update_Password);
 

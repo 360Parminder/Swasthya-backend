@@ -1,5 +1,6 @@
 const user_model = require("../models/user_model");
 const mongoose = require("mongoose");
+const { sendNotification } = require("../../public/utils/notification.js");
 
 exports.send_request = async (req) => {
   try {
@@ -46,6 +47,25 @@ exports.send_request = async (req) => {
     const updatedReceiverData = await receiverData.save();
 
     if (updatedReceiverData) {
+      // Send Mobile Push Notification to receiver
+      if (receiverData.notificationToken) {
+        try {
+          const senderName = senderData?.name || senderData?.username || "Someone";
+          await sendNotification(
+            receiverData.notificationToken,
+            `${senderName} invited you to join their Care Circle on Swasthya`,
+            "New Care Circle Invite",
+            {
+              type: "care_circle_invite",
+              senderId: senderID.toString(),
+              senderName: senderName,
+            }
+          );
+        } catch (notifErr) {
+          console.error("Error sending invite notification:", notifErr?.message || notifErr);
+        }
+      }
+
       return {
         message: "Request sent successfully",
         success: true,
@@ -336,20 +356,34 @@ exports.allRequest = async (req, res) => {
     if (user_id) {
       const user_data = await user_model.findOne({ _id: user_id });
 
-      // Populate sender's name for each request
       let allSenderData = [];
-      for (const sender of user_data.requests) {
-        let senderData = await user_model
-          .findOne({ _id: sender.sender_id })
-          .select("-password -auth_key -notificationToken -connections -requests")
-          .exec();
-        allSenderData.push(senderData);
+      if (user_data && Array.isArray(user_data.requests)) {
+        for (const reqItem of user_data.requests) {
+          if (reqItem.sender_id && reqItem.status === "pending") {
+            let senderData = await user_model
+              .findOne({ _id: reqItem.sender_id })
+              .select("-password -auth_key -notificationToken -connections -requests")
+              .lean()
+              .exec();
 
+            if (senderData) {
+              allSenderData.push({
+                ...senderData,
+                senderId: reqItem.sender_id,
+                requestId: reqItem._id,
+                status: reqItem.status,
+                createdAt: reqItem._id?.getTimestamp ? reqItem._id.getTimestamp() : new Date(),
+              });
+            }
+          }
+        }
       }
+
       return {
         success: true,
-        message:"All Relatives' Requests fetched",
+        message: "All Relatives' Requests fetched",
         connections: allSenderData,
+        requests: allSenderData,
       };
     }
   } catch (error) {
@@ -360,7 +394,7 @@ exports.allRequest = async (req, res) => {
       message: error.message,
     };
   }
-}
+};
 
 exports.findUserById = async (req, res) => {
   try {

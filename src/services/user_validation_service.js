@@ -148,6 +148,23 @@ exports.user_register = async (req, res) => {
       };
     }
 
+    const {
+      name,
+      mobile,
+      email,
+      password,
+      weight,
+      height,
+      dob,
+      gender,
+      food_preference,
+      weightUnit,
+      heightUnit,
+      countryCode,
+      fcm_token,
+      notificationToken,
+    } = req.body;
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await user_model.create({
@@ -165,6 +182,7 @@ exports.user_register = async (req, res) => {
       food_preference: food_preference?.toLowerCase(),
       weightUnit: weightUnit?.toLowerCase(),
       heightUnit: heightUnit?.toLowerCase(),
+      notificationToken: fcm_token || notificationToken || null,
     });
     if (newUser) {
       return {
@@ -624,4 +642,57 @@ exports.google_auth = async (req, res) => {
     };
   }
 };
+
+exports.update_fcm_token = async (req, res) => {
+  try {
+    const fcm_token = req.body.fcm_token || req.body.notificationToken;
+    if (!fcm_token) {
+      return {
+        status: 400,
+        success: false,
+        message: "FCM token / notification token is required",
+      };
+    }
+
+    const userId = req.user?._id;
+    if (!userId) {
+      return {
+        status: 401,
+        success: false,
+        message: "Unauthorized",
+      };
+    }
+
+    const updatedUser = await user_model.findByIdAndUpdate(
+      userId,
+      { notificationToken: fcm_token },
+      { new: true }
+    ).select("-password -auth_key");
+
+    if (!updatedUser) {
+      return {
+        status: 404,
+        success: false,
+        message: "User not found",
+      };
+    }
+
+    console.log(`[FCM] Notification token updated for user ${userId}`);
+
+    return {
+      status: 200,
+      success: true,
+      message: "FCM notification token saved successfully",
+      user: updatedUser,
+    };
+  } catch (error) {
+    console.error("Error updating FCM token:", error);
+    return {
+      status: 500,
+      success: false,
+      message: error.message || "Internal server error",
+    };
+  }
+};
+
 

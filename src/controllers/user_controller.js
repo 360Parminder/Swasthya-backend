@@ -9,6 +9,7 @@ const {
   verifyOtp,
   update_Password,
   google_auth,
+  update_fcm_token,
 } = require("../services/user_validation_service.js");
 
 const { profile_picture } = require("../services/profile_picture_service.js")
@@ -152,6 +153,16 @@ exports.google_auth = async (req, res) => {
   } catch (error) {
     console.error("Controller Google Auth Error:", error);
     res.status(500).json({ success: false, message: "An unexpected error occurred during Google authentication" });
+  }
+};
+
+exports.update_fcm_token = async (req, res) => {
+  try {
+    const data = await update_fcm_token(req, res);
+    res.status(data.status || 200).json(data);
+  } catch (error) {
+    console.error("Controller update_fcm_token Error:", error);
+    res.status(500).json({ success: false, message: "An unexpected error occurred while updating FCM token" });
   }
 };
 
