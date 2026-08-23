@@ -11,6 +11,8 @@ const {
     view_medication,
     view_all_medication,
     view_medication_by_date,
+    get_refill_alerts,
+    refill_medication,
 } = require("../controllers/medication_controller.js");
 
 router.use(user_auth);
@@ -22,6 +24,8 @@ router.post("/status", update_medication_status); // Update medication intake st
 router.get("/", view_medication);
 router.get("/all", view_all_medication);
 router.get("/bydate", view_medication_by_date);
+router.get("/refills", get_refill_alerts); // Get low stock and refill alerts
+router.post("/refill", refill_medication); // Refill medication stock
 
 // reminder_router.post("/medication/update", user_auth, update_medication);
 

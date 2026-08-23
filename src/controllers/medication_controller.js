@@ -6,6 +6,8 @@ const {
   view_medication,
   view_all_medication,
   view_medication_by_date,
+  get_refill_alerts,
+  refill_medication,
 } = require("../services/medication_service.js");
 
 exports.create_medication = async (req, res) => {
@@ -104,5 +106,33 @@ exports.delete_medication = async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json(error);
+  }
+};
+
+exports.get_refill_alerts = async (req, res) => {
+  try {
+    const data = await get_refill_alerts(req, res);
+    if (data.success) {
+      res.status(200).json(data);
+    } else {
+      res.status(data.status || 500).json(data);
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.refill_medication = async (req, res) => {
+  try {
+    const data = await refill_medication(req, res);
+    if (data.success) {
+      res.status(200).json(data);
+    } else {
+      res.status(data.status || 500).json(data);
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };

@@ -537,3 +537,180 @@ exports.delete_medication = async (req, res) => {
     };
   }
 };
+
+exports.get_refill_alerts = async (req) => {
+  try {
+    const user_id = req.user._id;
+    if (!user_id) {
+      return { status: 404, success: false, message: "User not found" };
+    }
+
+    const allGroups = await medication_model.find({ user_id: user_id });
+    if (!allGroups || allGroups.length === 0) {
+      return {
+        status: 200,
+        success: true,
+        summary: {
+          criticalCount: 0,
+          lowStockCount: 0,
+          healthyCount: 0,
+          totalCount: 0,
+          needsRefillCount: 0,
+        },
+        medications: [],
+      };
+    }
+
+    const list = [];
+    allGroups.forEach((group) => {
+      if (group && Array.isArray(group.record)) {
+        group.record.forEach((med) => {
+          if (!med) return;
+          const qty = typeof med.stock === "object" ? (typeof med.stock.quantity === "number" ? med.stock.quantity : 30) : 30;
+          const threshold = typeof med.stock === "object" ? (typeof med.stock.threshold === "number" ? med.stock.threshold : 5) : 5;
+          const remind = typeof med.stock === "object" ? (typeof med.stock.remind === "boolean" ? med.stock.remind : true) : true;
+
+          // Calculate daily dose count
+          let dailyDoses = 1;
+          if (Array.isArray(med.times) && med.times.length > 0) {
+            dailyDoses = med.times.length;
+          } else if (med.frequency && typeof med.frequency.times_per_day === "number") {
+            dailyDoses = Math.max(1, med.frequency.times_per_day);
+          }
+
+          const daysRemaining = dailyDoses > 0 ? Math.floor(qty / dailyDoses) : qty;
+
+          let stockStatus = "HEALTHY";
+          if (qty <= 0 || daysRemaining <= 2 || qty <= 2) {
+            stockStatus = "CRITICAL";
+          } else if (qty <= threshold || daysRemaining <= 7) {
+            stockStatus = "LOW_STOCK";
+          }
+
+          list.push({
+            _id: med._id,
+            parentContainerId: group._id,
+            forWhom: group.forWhom || "myself",
+            relative_id: group.relative_id,
+            medicine_name: med.medicine_name,
+            description: med.description || "",
+            forms: med.forms || "tablet",
+            strength: med.strength || "",
+            unit: med.unit || "mg",
+            quantity: qty,
+            threshold: threshold,
+            remind: remind,
+            dailyDoses: dailyDoses,
+            daysRemaining: daysRemaining,
+            stockStatus: stockStatus,
+            start_date: med.start_date,
+            end_date: med.end_date,
+            frequencyText: typeof med.frequency === "object" ? med.frequency?.type || "Daily" : med.frequency || "Daily",
+          });
+        });
+      }
+    });
+
+    // Sort: CRITICAL first, then LOW_STOCK, then HEALTHY
+    const priority = { CRITICAL: 1, LOW_STOCK: 2, HEALTHY: 3 };
+    list.sort((a, b) => {
+      const pDiff = (priority[a.stockStatus] || 3) - (priority[b.stockStatus] || 3);
+      if (pDiff !== 0) return pDiff;
+      return a.daysRemaining - b.daysRemaining;
+    });
+
+    const criticalCount = list.filter((m) => m.stockStatus === "CRITICAL").length;
+    const lowStockCount = list.filter((m) => m.stockStatus === "LOW_STOCK").length;
+    const healthyCount = list.filter((m) => m.stockStatus === "HEALTHY").length;
+
+    return {
+      status: 200,
+      success: true,
+      summary: {
+        criticalCount,
+        lowStockCount,
+        healthyCount,
+        totalCount: list.length,
+        needsRefillCount: criticalCount + lowStockCount,
+      },
+      medications: list,
+    };
+  } catch (error) {
+    console.error("Error in get_refill_alerts:", error);
+    return {
+      status: 500,
+      success: false,
+      message: error.message,
+    };
+  }
+};
+
+exports.refill_medication = async (req) => {
+  try {
+    const user_id = req.user._id;
+    const { medication_id, added_quantity, new_quantity, threshold, remind } = req.body;
+
+    if (!user_id) {
+      return { status: 404, success: false, message: "User not found" };
+    }
+    if (!medication_id) {
+      return { status: 400, success: false, message: "Medication ID is required" };
+    }
+
+    const medObjectId = new mongoose.Types.ObjectId(medication_id);
+    const userMedication = await medication_model.findOne({
+      user_id: user_id,
+      "record._id": medObjectId,
+    });
+
+    if (!userMedication) {
+      return { status: 404, success: false, message: "Medication not found" };
+    }
+
+    const medRecord = userMedication.record.id(medObjectId);
+    if (!medRecord) {
+      return { status: 404, success: false, message: "Medication record not found" };
+    }
+
+    if (!medRecord.stock) {
+      medRecord.stock = { quantity: 30, threshold: 5, remind: true };
+    }
+
+    if (typeof added_quantity === "number") {
+      medRecord.stock.quantity = Math.max(0, (medRecord.stock.quantity || 0) + added_quantity);
+    } else if (typeof new_quantity === "number") {
+      medRecord.stock.quantity = Math.max(0, new_quantity);
+    }
+
+    if (typeof threshold === "number") {
+      medRecord.stock.threshold = Math.max(0, threshold);
+    }
+
+    if (typeof remind === "boolean") {
+      medRecord.stock.remind = remind;
+    }
+
+    // Ensure description string validity
+    userMedication.record.forEach((rec) => {
+      if (rec.description === undefined || rec.description === null) {
+        rec.description = "";
+      }
+    });
+
+    await userMedication.save();
+
+    return {
+      status: 200,
+      success: true,
+      message: "Medication stock updated successfully",
+      medication: medRecord,
+    };
+  } catch (error) {
+    console.error("Error in refill_medication:", error);
+    return {
+      status: 500,
+      success: false,
+      message: error.message,
+    };
+  }
+};
