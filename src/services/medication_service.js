@@ -3,6 +3,7 @@ const medication_model = require("../models/medication_model");
 const reminderModel = require("../models/reminder_model");
 const { scheduleReminder } = require("../../public/utils/scheduler");
 const User = require("../models/user_model");
+const user_model = User;
 
 exports.create_medication = async (req) => {
   const user_id = req.user._id;
@@ -69,9 +70,16 @@ exports.create_medication = async (req) => {
           message: "Relative ID is required for relative medication",
         };
       }
-      const relativeUser = await User.findOne({ userId: relative_id }).session(
-        session
-      );
+      let userQuery = { userId: relative_id };
+      if (mongoose.Types.ObjectId.isValid(relative_id)) {
+        userQuery = {
+          $or: [
+            { _id: new mongoose.Types.ObjectId(relative_id) },
+            { userId: relative_id },
+          ],
+        };
+      }
+      const relativeUser = await User.findOne(userQuery).session(session);
       if (!relativeUser) {
         await session.abortTransaction();
         session.endSession();
@@ -270,11 +278,20 @@ exports.view_medication = async (req, res) => {
 exports.view_medication_by_date = async (req, res) => {
   try {
     const date = req.query.date;
-    console.log("Date: ", date);
     const user_id = req.user._id;
-    const allMedication = await medication_model.findOne({ user_id: user_id });
+    const currentUser = await user_model.findById(user_id);
+    const connectionIds = Array.isArray(currentUser?.connections) ? currentUser.connections : [];
 
-    if (!allMedication || !allMedication.record) {
+    const allMedicationDocs = await medication_model.find({
+      $or: [
+        { user_id: user_id },
+        { created_by: user_id },
+        { relative_id: user_id },
+        { user_id: { $in: connectionIds } },
+      ],
+    }).populate("user_id", "name email userId avatar");
+
+    if (!allMedicationDocs || allMedicationDocs.length === 0) {
       return {
         status: 200,
         success: true,
@@ -285,24 +302,34 @@ exports.view_medication_by_date = async (req, res) => {
 
     const targetDateStr = typeof date === "string" ? date.split("T")[0] : new Date(date).toISOString().split("T")[0];
 
-    const queryMedication = allMedication.record.filter((medication) => {
-      const startStr = medication.start_date ? new Date(medication.start_date).toISOString().split("T")[0] : null;
-      const endStr = medication.end_date ? new Date(medication.end_date).toISOString().split("T")[0] : null;
-      if (startStr && startStr > targetDateStr) return false;
-      if (endStr && endStr < targetDateStr) return false;
-      return true;
-    });
+    const result = [];
+    allMedicationDocs.forEach((doc) => {
+      if (Array.isArray(doc.record)) {
+        const queryMedication = doc.record.filter((medication) => {
+          const startStr = medication.start_date ? new Date(medication.start_date).toISOString().split("T")[0] : null;
+          const endStr = medication.end_date ? new Date(medication.end_date).toISOString().split("T")[0] : null;
+          if (startStr && startStr > targetDateStr) return false;
+          if (endStr && endStr < targetDateStr) return false;
+          return true;
+        });
 
-    const result = queryMedication.map((medication) => {
-      const medObj = medication.toObject ? medication.toObject() : { ...medication };
-      if (medObj.logs) {
-        medObj.logs = medObj.logs.filter((log) => {
-          if (!log.time) return false;
-          const logDateStr = new Date(log.time).toISOString().split("T")[0];
-          return logDateStr === targetDateStr;
+        queryMedication.forEach((medication) => {
+          const medObj = medication.toObject ? medication.toObject() : { ...medication };
+          medObj.forWhom = doc.forWhom || (doc.created_by && doc.created_by.toString() !== user_id.toString() ? "connection" : "myself");
+          medObj.relative_id = doc.relative_id;
+          medObj.target_user_id = doc.user_id;
+          medObj.recipientName = doc.user_id?.name || doc.user_id?.username;
+          medObj.recipientAvatar = doc.user_id?.avatar;
+          if (medObj.logs) {
+            medObj.logs = medObj.logs.filter((log) => {
+              if (!log.time) return false;
+              const logDateStr = new Date(log.time).toISOString().split("T")[0];
+              return logDateStr === targetDateStr;
+            });
+          }
+          result.push(medObj);
         });
       }
-      return medObj;
     });
 
     return {
@@ -343,8 +370,10 @@ exports.update_medication_status = async (req) => {
       };
     }
 
-    // Find the medication document for this user
-    let userMedication = await medication_model.findOne({ user_id: user_id });
+    // Find the medication document containing this record
+    let userMedication = await medication_model.findOne({
+      "record._id": new mongoose.Types.ObjectId(medication_id),
+    });
     if (!userMedication || !userMedication.record) {
       return { status: 404, success: false, message: "Medication document not found" };
     }
@@ -375,7 +404,7 @@ exports.update_medication_status = async (req) => {
       return true;
     });
 
-    const prevStatus = existingLogIndex !== -1 ? medRecord.logs[existingLogIndex].status : "not taken yet";
+    const prevStatus = existingLogIndex !== -1 ? medRecord.logs[existingLogIndex].status : null;
 
     if (existingLogIndex !== -1) {
       medRecord.logs[existingLogIndex].status = status;
@@ -439,7 +468,9 @@ exports.update_medication = async (req) => {
       return { status: 400, success: false, message: "Medication ID is required" };
     }
 
-    let userMedication = await medication_model.findOne({ user_id: user_id });
+    let userMedication = await medication_model.findOne({
+      "record._id": new mongoose.Types.ObjectId(medication_id),
+    });
     if (!userMedication || !userMedication.record) {
       return { status: 404, success: false, message: "Medication not found" };
     }
@@ -482,14 +513,25 @@ exports.update_medication = async (req) => {
 exports.view_all_medication = async (req, res) => {
   try {
     const user_id = req.user._id;
-    const allMedication = await medication_model.find({ user_id: user_id });
+    const currentUser = await user_model.findById(user_id);
+    const connectionIds = Array.isArray(currentUser?.connections) ? currentUser.connections : [];
+
+    const allMedication = await medication_model.find({
+      $or: [
+        { user_id: user_id },
+        { created_by: user_id },
+        { relative_id: user_id },
+        { user_id: { $in: connectionIds } },
+      ],
+    }).populate("user_id", "name email userId avatar");
+
     if (!allMedication) {
       return { success: false, message: "No Medication Found" };
     }
     return {
       success: true,
       medications: allMedication,
-      message: "All Medications fetched succesfully",
+      message: "All Medications fetched successfully",
     };
   } catch (error) {
     return {
@@ -503,7 +545,9 @@ exports.delete_medication = async (req, res) => {
   try {
     const user_id = req.user._id;
     const medication_id = new mongoose.Types.ObjectId(req.query.medication_id);
-    let allMedication = await medication_model.findOne({ user_id: user_id });
+    let allMedication = await medication_model.findOne({
+      "record._id": medication_id,
+    });
 
     if (!allMedication) {
       return {
@@ -545,7 +589,18 @@ exports.get_refill_alerts = async (req) => {
       return { status: 404, success: false, message: "User not found" };
     }
 
-    const allGroups = await medication_model.find({ user_id: user_id });
+    const currentUser = await user_model.findById(user_id);
+    const connectionIds = Array.isArray(currentUser?.connections) ? currentUser.connections : [];
+
+    const allGroups = await medication_model.find({
+      $or: [
+        { user_id: user_id },
+        { created_by: user_id },
+        { relative_id: user_id },
+        { user_id: { $in: connectionIds } },
+      ],
+    }).populate("user_id", "name email userId avatar");
+
     if (!allGroups || allGroups.length === 0) {
       return {
         status: 200,
@@ -587,11 +642,14 @@ exports.get_refill_alerts = async (req) => {
             stockStatus = "LOW_STOCK";
           }
 
+          const recipientName = group.user_id?.name || group.user_id?.username || "Myself";
+
           list.push({
             _id: med._id,
             parentContainerId: group._id,
-            forWhom: group.forWhom || "myself",
+            forWhom: group.forWhom || (group.created_by && group.created_by.toString() !== user_id.toString() ? "connection" : "myself"),
             relative_id: group.relative_id,
+            recipientName: recipientName,
             medicine_name: med.medicine_name,
             description: med.description || "",
             forms: med.forms || "tablet",
